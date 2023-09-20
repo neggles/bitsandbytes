@@ -28,7 +28,7 @@ INCLUDE :=  -I $(CUDA_HOME)/include -I $(ROOT_DIR)/csrc -I $(CONDA_PREFIX)/inclu
 LIB := -L $(CUDA_HOME)/lib64 -lcudart -lcublas -lcublasLt -lcusparse -L $(CONDA_PREFIX)/lib
 
 # NVIDIA NVCC compilation flags
-COMPUTE_CAPABILITY += -gencode arch=compute_50,code=sm_50 # Maxwell
+COMPUTE_CAPABILITY := -gencode arch=compute_50,code=sm_50 # Maxwell
 COMPUTE_CAPABILITY += -gencode arch=compute_52,code=sm_52 # Maxwell
 COMPUTE_CAPABILITY += -gencode arch=compute_60,code=sm_60 # Pascal
 COMPUTE_CAPABILITY += -gencode arch=compute_61,code=sm_61 # Pascal
@@ -38,20 +38,35 @@ CC_KEPLER := -gencode arch=compute_35,code=sm_35 # Kepler
 CC_KEPLER += -gencode arch=compute_37,code=sm_37 # Kepler
 
 # Later versions of CUDA support the new architectures
-CC_CUDA11x := -gencode arch=compute_75,code=sm_75
-CC_CUDA11x += -gencode arch=compute_80,code=sm_80
-CC_CUDA11x += -gencode arch=compute_86,code=sm_86
+CC_CUDA11x := -gencode arch=compute_75,code=sm_75 # Turing
+CC_CUDA11x += -gencode arch=compute_80,code=sm_80 # Ampere DC
+CC_CUDA11x += -gencode arch=compute_86,code=sm_86 # Ampere
 
+# When CuBLASLt is available, we use these
+CC_cublasLt110 := -gencode arch=compute_70,code=sm_70 # Volta
+CC_cublasLt110 += -gencode arch=compute_75,code=sm_75 # Turing
+CC_cublasLt110 += -gencode arch=compute_80,code=sm_80 # Ampere DC
 
-CC_cublasLt110 := -gencode arch=compute_75,code=sm_75
-CC_cublasLt110 += -gencode arch=compute_80,code=sm_80
+# For newer CuBLASLt versions
+CC_cublasLt111 := -gencode arch=compute_70,code=sm_70 # Volta
+CC_cublasLt111 += -gencode arch=compute_75,code=sm_75 # Turing
+CC_cublasLt111 += -gencode arch=compute_80,code=sm_80 # Ampere DC
+CC_cublasLt111 += -gencode arch=compute_86,code=sm_86 # Ampere
 
-CC_cublasLt111 := -gencode arch=compute_75,code=sm_75
-CC_cublasLt111 += -gencode arch=compute_80,code=sm_80
-CC_cublasLt111 += -gencode arch=compute_86,code=sm_86
+# Builds for Jetson boards (weird minor architecture revisions)
+CC_JETSON := -gencode arch=compute_53,code=sm_53 # Jetson TX1 and Nano (Maxwell)
+CC_JETSON += -gencode arch=compute_62,code=sm_62 # Jetson TX2 (Pascal)
+CC_JETSON += -gencode arch=compute_72,code=sm_72 # Jetson Xavier (Volta)
+CC_JETSON += -gencode arch=compute_87,code=sm_87 # Jetson Orin (Ampere)
 
-CC_ADA_HOPPER := -gencode arch=compute_89,code=sm_89
-CC_ADA_HOPPER += -gencode arch=compute_90,code=sm_90
+# And for all the shiny newest things
+CC_ADA_HOPPER := -gencode arch=compute_89,code=sm_89 # Ada Lovelace
+CC_ADA_HOPPER += -gencode arch=compute_90,code=sm_90 # Hopper
+CC_ADA_HOPPER += -gencode arch=compute_90a,code=sm_90a # Hopper+
+
+# PTX targets
+PTX_AMPERE := -gencode arch=compute_86,code=compute_86 # PTX for Ampere on up
+PTX_HOPPER := -gencode arch=compute_90,code=compute_90 # PTX for Hopper on up (blackwell next?)
 
 
 all: $(BUILD_DIR) env
@@ -90,25 +105,33 @@ cuda12x_nomatmul: $(BUILD_DIR) env
 	$(NVCC) $(COMPUTE_CAPABILITY) $(CC_CUDA11x) $(CC_ADA_HOPPER) -Xcompiler '-fPIC' -dlink $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o -o $(BUILD_DIR)/link.o
 	$(GPP) -std=c++14 -DBUILD_CUDA -shared -fPIC $(INCLUDE) $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o $(BUILD_DIR)/link.o $(FILES_CPP) -o ./bitsandbytes/libbitsandbytes_cuda$(CUDA_VERSION)_nocublaslt.so $(LIB)
 
+
 cuda110: $(BUILD_DIR) env
 	$(NVCC) $(CC_cublasLt110) -Xcompiler '-fPIC' --use_fast_math -Xptxas=-v -dc $(FILES_CUDA) $(INCLUDE) $(LIB) --output-directory $(BUILD_DIR)
 	$(NVCC) $(CC_cublasLt110) -Xcompiler '-fPIC' -dlink $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o -o $(BUILD_DIR)/link.o
 	$(GPP) -std=c++14 -DBUILD_CUDA -shared -fPIC $(INCLUDE) $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o $(BUILD_DIR)/link.o $(FILES_CPP) -o ./bitsandbytes/libbitsandbytes_cuda$(CUDA_VERSION).so $(LIB)
 
 cuda11x: $(BUILD_DIR) env
-	$(NVCC) $(CC_cublasLt111) -Xcompiler '-fPIC' --use_fast_math -Xptxas=-v -dc $(FILES_CUDA) $(INCLUDE) $(LIB) --output-directory $(BUILD_DIR)
-	$(NVCC) $(CC_cublasLt111) -Xcompiler '-fPIC' -dlink $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o -o $(BUILD_DIR)/link.o
+	$(NVCC) $(CC_cublasLt111) $(PTX_AMPERE) -Xcompiler '-fPIC' --use_fast_math -Xptxas=-v -dc $(FILES_CUDA) $(INCLUDE) $(LIB) --output-directory $(BUILD_DIR)
+	$(NVCC) $(CC_cublasLt111) $(PTX_AMPERE) -Xcompiler '-fPIC' -dlink $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o -o $(BUILD_DIR)/link.o
 	$(GPP) -std=c++14 -DBUILD_CUDA -shared -fPIC $(INCLUDE) $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o $(BUILD_DIR)/link.o $(FILES_CPP) -o ./bitsandbytes/libbitsandbytes_cuda$(CUDA_VERSION).so $(LIB)
 
 cuda118: $(BUILD_DIR) env
-	$(NVCC) $(CC_cublasLt111) $(CC_ADA_HOPPER) -Xcompiler '-fPIC' --use_fast_math -Xptxas=-v -dc $(FILES_CUDA) $(INCLUDE) $(LIB) --output-directory $(BUILD_DIR)
-	$(NVCC) $(CC_cublasLt111) $(CC_ADA_HOPPER) -Xcompiler '-fPIC' -dlink $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o -o $(BUILD_DIR)/link.o
+	$(NVCC) $(CC_cublasLt111) $(CC_ADA_HOPPER) $(PTX_AMPERE) -Xcompiler '-fPIC' --use_fast_math -Xptxas=-v -dc $(FILES_CUDA) $(INCLUDE) $(LIB) --output-directory $(BUILD_DIR)
+	$(NVCC) $(CC_cublasLt111) $(CC_ADA_HOPPER) $(PTX_AMPERE) -Xcompiler '-fPIC' -dlink $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o -o $(BUILD_DIR)/link.o
 	$(GPP) -std=c++14 -DBUILD_CUDA -shared -fPIC $(INCLUDE) $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o $(BUILD_DIR)/link.o $(FILES_CPP) -o ./bitsandbytes/libbitsandbytes_cuda$(CUDA_VERSION).so $(LIB)
 
 cuda12x: $(BUILD_DIR) env
-	$(NVCC) $(CC_cublasLt111) $(CC_ADA_HOPPER) -Xcompiler '-fPIC' --use_fast_math -Xptxas=-v -dc $(FILES_CUDA) $(INCLUDE) $(LIB) --output-directory $(BUILD_DIR)
-	$(NVCC) $(CC_cublasLt111) $(CC_ADA_HOPPER) -Xcompiler '-fPIC' -dlink $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o -o $(BUILD_DIR)/link.o
+	$(NVCC) $(CC_cublasLt111) $(CC_ADA_HOPPER) $(PTX_HOPPER) -Xcompiler '-fPIC' --use_fast_math -Xptxas=-v -dc $(FILES_CUDA) $(INCLUDE) $(LIB) --output-directory $(BUILD_DIR)
+	$(NVCC) $(CC_cublasLt111) $(CC_ADA_HOPPER) $(PTX_HOPPER) -Xcompiler '-fPIC' -dlink $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o -o $(BUILD_DIR)/link.o
 	$(GPP) -std=c++14 -DBUILD_CUDA -shared -fPIC $(INCLUDE) $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o $(BUILD_DIR)/link.o $(FILES_CPP) -o ./bitsandbytes/libbitsandbytes_cuda$(CUDA_VERSION).so $(LIB)
+
+
+jetson: $(BUILD_DIR) env
+	$(NVCC) $(CC_JETSON) $(PTX_AMPERE) -Xcompiler '-fPIC' --use_fast_math -Xptxas=-v -dc $(FILES_CUDA) $(INCLUDE) $(LIB) --output-directory $(BUILD_DIR)
+	$(NVCC) $(CC_JETSON) $(PTX_AMPERE) -Xcompiler '-fPIC' -dlink $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o -o $(BUILD_DIR)/link.o
+	$(GPP) -std=c++14 -DBUILD_CUDA -shared -fPIC $(INCLUDE) $(BUILD_DIR)/ops.o $(BUILD_DIR)/kernels.o $(BUILD_DIR)/link.o $(FILES_CPP) -o ./bitsandbytes/libbitsandbytes_cuda$(CUDA_VERSION).so $(LIB)
+
 
 cpuonly: $(BUILD_DIR) env
 	$(GPP) -std=c++14 -shared -fPIC -I $(ROOT_DIR)/csrc -I $(ROOT_DIR)/include $(FILES_CPP) -o ./bitsandbytes/libbitsandbytes_cpu.so
@@ -135,7 +158,7 @@ $(ROOT_DIR)/dependencies/cub:
 	cd dependencies/cub; git checkout 1.11.0
 
 clean:
-	rm build/*
+	rm -r build/*
 
 cleaneggs:
 	rm -rf *.egg*
